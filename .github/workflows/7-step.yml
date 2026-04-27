@@ -1,0 +1,168 @@
+name: Step 7
+on:
+  workflow_run:
+    workflows: ["repo-report", "Repository Report"]
+    types:
+      - completed
+
+permissions:
+  contents: read
+  actions: write
+  issues: write
+
+env:
+  STEP_8_FILE: ".github/steps/8-step.md"
+
+jobs:
+  find_exercise:
+    name: Find Exercise Issue
+    uses: skills/exercise-toolkit/.github/workflows/find-exercise-issue.yml@v0.9.1
+
+  check_step_work:
+    name: Check step work
+    runs-on: ubuntu-latest
+    needs: [find_exercise]
+    env:
+      ISSUE_REPOSITORY: ${{ github.repository }}
+      ISSUE_NUMBER: ${{ needs.find_exercise.outputs['issue-number'] }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Get response templates
+        uses: actions/checkout@v6
+        with:
+          repository: skills/exercise-toolkit
+          path: exercise-toolkit
+          ref: v0.9.1
+
+      - name: Find last comment
+        id: find-last-comment
+        uses: peter-evans/find-comment@v4
+        with:
+          repository: ${{ env.ISSUE_REPOSITORY }}
+          issue-number: ${{ env.ISSUE_NUMBER }}
+          direction: last
+
+      - name: Update comment - checking work
+        uses: GrantBirki/comment@v2.1.1
+        with:
+          repository: ${{ env.ISSUE_REPOSITORY }}
+          issue-number: ${{ env.ISSUE_NUMBER }}
+          comment-id: ${{ steps.find-last-comment.outputs.comment-id }}
+          file: exercise-toolkit/markdown-templates/step-feedback/checking-work.md
+          edit-mode: replace
+
+      # START: Check practical exercise
+      - name: Check workflow run completed successfully
+        id: check-run-success
+        continue-on-error: true
+        run: |
+          [[ "${{ github.event.workflow_run.conclusion }}" == "success" ]]
+
+      - name: Check workflow run came from repo-report workflow file
+        id: check-run-path
+        continue-on-error: true
+        run: |
+          [[ "${{ github.event.workflow_run.path }}" == ".github/workflows/repo-report.md" ]]
+
+      - name: Check for top 3 pull requests requirement
+        id: check-top-prs
+        continue-on-error: true
+        uses: skills/action-keyphrase-checker@v1
+        with:
+          text-file: .github/workflows/repo-report.md
+          keyphrase: "Top 3 most active pull requests"
+
+      - name: Check for failing workflows requirement
+        id: check-failing-workflows
+        continue-on-error: true
+        uses: skills/action-keyphrase-checker@v1
+        with:
+          text-file: .github/workflows/repo-report.md
+          keyphrase: "Any failing workflows"
+
+      - name: Check for suggested next steps requirement
+        id: check-next-steps
+        continue-on-error: true
+        uses: skills/action-keyphrase-checker@v1
+        with:
+          text-file: .github/workflows/repo-report.md
+          keyphrase: "Suggested next steps"
+
+      - name: Update comment - step results
+        uses: GrantBirki/comment@v2.1.1
+        with:
+          repository: ${{ env.ISSUE_REPOSITORY }}
+          issue-number: ${{ env.ISSUE_NUMBER }}
+          comment-id: ${{ steps.find-last-comment.outputs.comment-id }}
+          edit-mode: replace
+          file: exercise-toolkit/markdown-templates/step-feedback/step-results-table.md
+          vars: |
+            step_number: 7
+            results_table:
+              - description: "Checked that repo-report workflow run succeeded"
+                passed: ${{ steps.check-run-success.outcome == 'success' }}
+              - description: "Checked that run used .github/workflows/repo-report.md"
+                passed: ${{ steps.check-run-path.outcome == 'success' }}
+              - description: "Checked for Top 3 most active pull requests"
+                passed: ${{ steps.check-top-prs.outcome == 'success' }}
+              - description: "Checked for Any failing workflows"
+                passed: ${{ steps.check-failing-workflows.outcome == 'success' }}
+              - description: "Checked for Suggested next steps"
+                passed: ${{ steps.check-next-steps.outcome == 'success' }}
+      # END: Check practical exercise
+
+      - name: Fail job if not all checks passed
+        if: contains(steps.*.outcome, 'failure')
+        run: exit 1
+
+  post_next_step_content:
+    name: Post next step content
+    needs: [find_exercise, check_step_work]
+    runs-on: ubuntu-latest
+    env:
+      ISSUE_REPOSITORY: ${{ github.repository }}
+      ISSUE_NUMBER: ${{ needs.find_exercise.outputs['issue-number'] }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Get response templates
+        uses: actions/checkout@v6
+        with:
+          repository: skills/exercise-toolkit
+          path: exercise-toolkit
+          ref: v0.9.1
+
+      - name: Create comment - step finished
+        uses: GrantBirki/comment@v2.1.1
+        with:
+          repository: ${{ env.ISSUE_REPOSITORY }}
+          issue-number: ${{ env.ISSUE_NUMBER }}
+          file: exercise-toolkit/markdown-templates/step-feedback/step-finished-prepare-next-step.md
+          vars: |
+            next_step_number: 8
+
+      - name: Create comment - add step content
+        uses: GrantBirki/comment@v2.1.1
+        with:
+          repository: ${{ env.ISSUE_REPOSITORY }}
+          issue-number: ${{ env.ISSUE_NUMBER }}
+          file: ${{ env.STEP_8_FILE }}
+
+      - name: Create comment - watching for progress
+        uses: GrantBirki/comment@v2.1.1
+        with:
+          repository: ${{ env.ISSUE_REPOSITORY }}
+          issue-number: ${{ env.ISSUE_NUMBER }}
+          file: exercise-toolkit/markdown-templates/step-feedback/watching-for-progress.md
+
+      - name: Disable current workflow and enable next one
+        run: |
+          gh workflow disable "${{github.workflow}}"
+          gh workflow enable "Step 8"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
