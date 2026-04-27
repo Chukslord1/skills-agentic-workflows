@@ -7,6 +7,11 @@ permissions:
 
 tools:
   github:
+
+safe-outputs:
+  create-issue:
+    title-prefix: "[repo-report] "
+    labels: ["report"]
 ---
 
 # Repository Report
