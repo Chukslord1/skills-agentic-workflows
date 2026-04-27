@@ -4,4 +4,7 @@ on:
 
 permissions:
   contents: read
+
+tools:
+  github:
 ---
